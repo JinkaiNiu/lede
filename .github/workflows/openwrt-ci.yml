@@ -90,6 +90,7 @@ jobs:
             echo "未检测到 .config 文件，编译终止。"
             exit 1
           fi
+          make defconfig
           make -j$(nproc) || make -j1 V=s
           echo "固件编译完成。"
           echo "======================="
