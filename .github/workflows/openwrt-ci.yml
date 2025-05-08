@@ -10,6 +10,7 @@ name: OpenWrt-CI
 on:
   schedule:
     - cron: 0 20 * * *
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -27,6 +28,7 @@ jobs:
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
+          echo "开始清理空间并初始化环境..."
           docker rmi `docker images -q`
           sudo -E rm -rf /usr/share/dotnet /etc/mysql /etc/php /etc/apt/sources.list.d /usr/local/lib/android
           sudo -E apt-mark hold grub-efi-amd64-signed
@@ -38,6 +40,7 @@ jobs:
           sudo -E apt -y autoremove --purge
           sudo -E apt clean
           sudo -E timedatectl set-timezone "Asia/Shanghai"
+          echo "环境初始化完成。"
 
       - name: Checkout OpenWrt
         uses: actions/checkout@v4
@@ -58,21 +61,39 @@ jobs:
 
       - name: Update feeds
         run: |
+          echo "更新 OpenWrt 软件源..."
           sed -i 's/#src-git helloworld/src-git helloworld/g' ./feeds.conf.default
           ./scripts/feeds update -a
           ./scripts/feeds install -a
+          echo "软件源更新完成。"
 
       - name: Generate configuration file
-        run: make defconfig
+        run: |
+          echo "生成配置文件..."
+          if [ -f .config ]; then
+            echo "检测到仓库中的 .config 文件，使用该文件。"
+          else
+            echo "未检测到 .config 文件，生成默认配置。"
+            make defconfig
+          fi
+          echo "配置文件生成完成。"
 
       - name: Download packages
         run: make download -j16
 
       - name: Compile firmware
         run: |
+          echo "开始编译固件..."
+          if [ -f .config ]; then
+            echo "使用 .config 文件进行编译。"
+          else
+            echo "未检测到 .config 文件，编译终止。"
+            exit 1
+          fi
           make -j$(nproc) || make -j1 V=s
+          echo "固件编译完成。"
           echo "======================="
-          echo "Space usage:"
+          echo "磁盘空间使用情况："
           echo "======================="
           df -h
           echo "======================="
@@ -82,11 +103,13 @@ jobs:
 
       - name: Prepare artifact
         run: |
+          echo "准备上传文件..."
           mkdir -p ./artifact/package
           mkdir -p ./artifact/buildinfo
           rm -rf $(find ./bin/targets/ -type d -name "packages")
           cp -rf $(find ./bin/packages/ -type f -name "*.ipk") ./artifact/package/
           cp -rf $(find ./bin/targets/ -type f -name "*.buildinfo" -o -name "*.manifest") ./artifact/buildinfo/
+          echo "文件准备完成。"
 
       - name: Upload buildinfo
         uses: actions/upload-artifact@v4
